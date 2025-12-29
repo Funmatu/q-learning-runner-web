@@ -3,276 +3,329 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Neon Marathon Runner - AI Edition</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>NEON RL ARENA: Optimized Learning</title>
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            background-color: #0f172a;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            touch-action: manipulation;
+        :root {
+            /* Neon Palette */
+            --bg-dark: #0f172a;
+            --bg-panel: rgba(15, 23, 42, 0.9);
+            --border-panel: rgba(255, 255, 255, 0.1);
+            
+            --color-qt: #06b6d4;   /* Cyan for Q-Table */
+            --color-dqn: #d946ef;  /* Magenta for DQN */
+            --color-man: #22c55e;  /* Green for Manual */
+            --color-danger: #f43f5e;
+            --color-warn: #eab308;
+            --color-safe: #22c55e;
+            --color-text: #f8fafc;
+            --color-text-dim: #94a3b8;
+
+            --font-mono: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', 'Courier New', monospace;
+            --font-ui: 'Segoe UI', system-ui, sans-serif;
         }
-        #gameCanvas {
-            display: block;
-            image-rendering: pixelated;
+
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: var(--bg-dark); 
+            font-family: var(--font-ui); 
+            color: var(--color-text); 
+            user-select: none; 
+            -webkit-font-smoothing: antialiased;
         }
-        .retro-text {
-            text-shadow: 0 0 10px rgba(34, 211, 238, 0.8);
+
+        canvas { 
+            display: block; 
+            margin-top: 70px; /* Header height */
         }
-        /* AI Panel Glow */
-        .ai-active {
-            box-shadow: 0 0 20px rgba(168, 85, 247, 0.6);
-            border-color: rgba(168, 85, 247, 0.8) !important;
+
+        /* --- UI COMPONENTS --- */
+
+        /* Header Bar */
+        #control-panel {
+            position: absolute; top: 0; left: 0; right: 0; height: 70px;
+            background: var(--bg-panel);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-panel);
+            display: flex; align-items: center; justify-content: space-between; 
+            padding: 0 32px; z-index: 100;
+            box-shadow: 0 4px 30px rgba(0,0,0,0.5);
         }
+
+        .brand-title { 
+            font-weight: 800; font-size: 20px; letter-spacing: 1px; 
+            font-style: italic; text-transform: uppercase;
+            text-shadow: 0 0 10px rgba(255,255,255,0.1);
+        }
+        .brand-title span:nth-child(1) { color: var(--color-qt); text-shadow: 0 0 12px var(--color-qt); }
+        .brand-title span:nth-child(2) { color: #fff; margin: 0 6px; opacity: 0.5; font-style: normal;}
+        .brand-title span:nth-child(3) { color: var(--color-dqn); text-shadow: 0 0 12px var(--color-dqn); }
+
+        .controls-wrapper { display: flex; gap: 32px; align-items: center; }
+
+        /* Status Pills */
+        .status-pill {
+            font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+            padding: 6px 12px; border-radius: 20px;
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            color: var(--color-text-dim);
+            transition: all 0.3s ease;
+        }
+        .status-active { color: var(--color-man); border-color: rgba(34, 197, 94, 0.3); background: rgba(34, 197, 94, 0.1); box-shadow: 0 0 10px rgba(34, 197, 94, 0.1); }
+        .status-error { color: var(--color-danger); border-color: rgba(244, 63, 94, 0.3); }
+
+        /* Modern Switch */
+        .switch-group { display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 700; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+        .toggle-switch { position: relative; width: 48px; height: 26px; cursor: pointer; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .switch-track { 
+            position: absolute; inset: 0; 
+            background-color: #334155; 
+            border-radius: 26px; transition: .3s; 
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.6);
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .switch-knob { 
+            position: absolute; height: 20px; width: 20px; left: 3px; bottom: 2px; 
+            background-color: white; border-radius: 50%; transition: .3s cubic-bezier(0.4, 0.0, 0.2, 1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+        }
+        
+        input:checked + .switch-track { background-color: var(--color-dqn); box-shadow: 0 0 15px rgba(217, 70, 239, 0.4); }
+        input:checked + .switch-track .switch-knob { transform: translateX(22px); }
+        
+        #manual-toggle:checked + .switch-track { background-color: var(--color-man); box-shadow: 0 0 15px rgba(34, 197, 94, 0.4); }
+        #train-toggle:checked + .switch-track { background-color: var(--color-qt); box-shadow: 0 0 15px rgba(6, 182, 212, 0.4); }
+
+        /* HUD OVERLAY */
+        #hud-container { position: absolute; top: 70px; left: 0; right: 0; bottom: 0; pointer-events: none; padding: 20px; }
+        
+        .lane-hud {
+            position: absolute; left: 24px; top: 24px;
+            background: var(--bg-panel); backdrop-filter: blur(8px);
+            padding: 16px; border-radius: 12px; 
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            min-width: 260px;
+            display: flex; flex-direction: column; gap: 8px;
+            transition: transform 0.2s, box-shadow 0.3s;
+        }
+        
+        .lane-hud::before {
+            content: ''; position: absolute; top: 12px; bottom: 12px; left: 0; width: 3px;
+            border-radius: 0 4px 4px 0;
+            box-shadow: 2px 0 10px currentColor;
+        }
+        .hud-qt { color: var(--color-qt); } .hud-qt::before { background: var(--color-qt); }
+        .hud-dqn { color: var(--color-dqn); } .hud-dqn::before { background: var(--color-dqn); }
+        .hud-man { color: var(--color-man); } .hud-man::before { background: var(--color-man); }
+
+        .hud-header { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 4px; }
+        .hud-name { font-weight: 900; font-size: 16px; letter-spacing: 0.5px; text-shadow: 0 0 10px currentColor; }
+        .hud-score { font-family: var(--font-mono); font-size: 24px; color: #fff; font-weight: bold; }
+
+        .hud-grid { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 11px; font-family: var(--font-mono); }
+        .hud-label { color: var(--color-text-dim); font-weight: 600; }
+        .hud-val { color: #fff; text-align: right; }
+        
+        .val-hl { color: #fff; text-shadow: 0 0 5px rgba(255,255,255,0.5); }
+        .val-loss { color: var(--color-danger); }
+        .val-wait { color: var(--color-text-dim); animation: pulse 1s infinite; }
+        .val-act-ai { color: #a855f7; font-weight: bold; }
+        .val-act-rnd { color: #eab308; font-weight: bold; }
+        .val-act-test { color: #22c55e; font-weight: bold; }
+        .val-reward-pos { color: var(--color-man); }
+        .val-reward-neg { color: var(--color-danger); }
+
+        /* Action Bars */
+        .intent-wrapper { grid-column: 1 / -1; margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); }
+        .intent-flex { display: flex; height: 4px; width: 100%; background: #1e293b; border-radius: 2px; overflow: hidden; margin-top: 4px; }
+        .bar-run { background: #3b82f6; transition: width 0.1s; }
+        .bar-jmp { background: #ef4444; transition: width 0.1s; }
+        
+        /* Epsilon Bar */
+        .epsilon-bar-bg { width: 100%; height: 3px; background: #334155; margin-top: 4px; border-radius: 2px; }
+        .epsilon-bar-fill { height: 100%; background: #eab308; width: 100%; transition: width 0.5s; border-radius: 2px; }
+
+        .intent-text { display: flex; justify-content: space-between; font-size: 10px; color: var(--color-text-dim); margin-top: 2px;}
+
+        /* LOADER */
+        #loader { 
+            position: fixed; inset: 0; background: var(--bg-dark); z-index: 9999; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+        }
+        .loader-content { text-align: center; }
+        .loader-title { 
+            font-size: 32px; font-weight: 900; color: white; letter-spacing: 4px; margin-bottom: 16px;
+            background: linear-gradient(to right, var(--color-qt), #fff, var(--color-dqn));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .loader-status { 
+            font-family: var(--font-mono); color: var(--color-qt); font-size: 12px; 
+            letter-spacing: 2px; animation: pulse 1.5s infinite; 
+        }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
     </style>
 </head>
-<body class="flex flex-col items-center justify-center min-h-screen">
+<body>
 
-    <!-- UI Layer -->
-    <div id="ui-container" class="absolute inset-0 pointer-events-none flex flex-col justify-between p-6">
-        <div class="flex justify-between items-start pointer-events-auto">
-            <div class="space-y-2">
-                <div class="bg-black/40 backdrop-blur-md p-4 rounded-xl border border-cyan-500/30">
-                    <p class="text-cyan-400 text-xs uppercase tracking-widest font-bold">Distance</p>
-                    <p id="score" class="text-3xl text-white font-mono retro-text">00000</p>
-                </div>
-                <!-- AI Info Panel -->
-                <div id="ai-info" class="bg-black/40 backdrop-blur-md p-3 rounded-xl border border-purple-500/30 transition-all duration-500">
-                    <p class="text-purple-400 text-[10px] uppercase tracking-widest font-bold">AI Status</p>
-                    <div class="flex flex-col text-xs text-slate-300 font-mono">
-                        <span>Episode: <span id="ai-episodes">0</span></span>
-                        <span>Knowledge: <span id="ai-qsize">0</span></span>
-                        <span>Exploration: <span id="ai-epsilon">0%</span></span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="flex flex-col items-end gap-2">
-                <div class="bg-black/40 backdrop-blur-md p-4 rounded-xl border border-pink-500/30">
-                    <p class="text-pink-400 text-xs uppercase tracking-widest font-bold">Best</p>
-                    <p id="highScore" class="text-3xl text-white font-mono">00000</p>
-                </div>
-                <!-- Mode Toggle -->
-                <div class="bg-black/60 backdrop-blur-md p-2 rounded-lg border border-slate-600 pointer-events-auto">
-                    <div class="flex items-center gap-3">
-                        <span class="text-[10px] text-slate-400 font-bold">MANUAL</span>
-                        <button id="mode-toggle" class="relative w-12 h-6 bg-slate-700 rounded-full transition-colors">
-                            <div id="toggle-knob" class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-all"></div>
-                        </button>
-                        <span class="text-[10px] text-purple-400 font-bold">AUTO (RL)</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div id="start-screen" class="pointer-events-auto self-center bg-black/60 backdrop-blur-xl p-8 rounded-2xl border-2 border-cyan-500 text-center max-w-sm w-full shadow-[0_0_50px_rgba(6,182,212,0.3)]">
-            <h1 class="text-4xl font-black text-white mb-2 tracking-tighter italic">NEON RUN</h1>
-            <p class="text-cyan-300 text-sm mb-6 uppercase tracking-wider">Infinite Marathon Challenge</p>
-            <div class="space-y-4">
-                <button id="start-btn" class="w-full py-4 bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xl rounded-lg transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-cyan-500/50">
-                    START RUN
-                </button>
-                <p id="control-hint" class="text-slate-400 text-xs mt-4">Press [SPACE] or TAP to Jump</p>
-            </div>
-        </div>
-
-        <div id="game-over-screen" class="hidden pointer-events-auto self-center bg-black/80 backdrop-blur-xl p-8 rounded-2xl border-2 border-pink-500 text-center max-w-sm w-full">
-            <h2 class="text-3xl font-bold text-pink-500 mb-2">RUN ENDED</h2>
-            <p id="final-score" class="text-5xl text-white font-mono mb-6">0</p>
-            <button id="restart-btn" class="w-full py-4 bg-pink-500 hover:bg-pink-400 text-white font-bold text-xl rounded-lg transition-all transform hover:scale-105">
-                RETRY
-            </button>
-            <p id="ai-auto-restart-hint" class="text-purple-400 text-[10px] mt-4 hidden">AI is learning... auto-restarting in 1s</p>
+    <!-- Loading Screen -->
+    <div id="loader">
+        <div class="loader-content">
+            <div class="loader-title">SYSTEM INITIALIZATION</div>
+            <div class="loader-status">CONNECTING TO TENSORFLOW BACKEND...</div>
         </div>
     </div>
 
-    <!-- Game Canvas -->
+    <!-- Control Header -->
+    <div id="control-panel">
+        <div class="brand-title">NEON<span>Q-TABLE</span>/<span>DQN</span></div>
+        
+        <div id="gpu-status" class="status-pill">GPU: INITIALIZING...</div>
+
+        <div class="controls-wrapper">
+            <div class="switch-group">
+                <span id="mode-label">TRAINING</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="train-toggle" checked>
+                    <div class="switch-track"><div class="switch-knob"></div></div>
+                </label>
+            </div>
+            
+            <div class="switch-group">
+                <span>MANUAL</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="manual-toggle">
+                    <div class="switch-track"><div class="switch-knob"></div></div>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <!-- HUD Overlay -->
+    <div id="hud-container"></div>
+    
+    <!-- Main Game Canvas -->
     <canvas id="gameCanvas"></canvas>
 
     <script>
+        /**
+         * ------------------------------------------------------------------
+         * CONFIGURATION & CONSTANTS
+         * ------------------------------------------------------------------
+         */
+        const CONFIG = {
+            gravity: 0.65,
+            jumpForce: -13,
+            groundHeight: 60,
+            baseSpeed: 7,
+            maxSpeed: 25,
+            speedInc: 0.001,
+            playerSize: 32,
+            colors: {
+                qt: '#06b6d4',
+                dqn: '#d946ef',
+                man: '#22c55e',
+                obs: '#f43f5e',
+                bg: '#0f172a',
+                grid: '#1e293b',
+                safe: '#22c55e',  // GREEN
+                warn: '#eab308',  // YELLOW
+                danger: '#f43f5e' // RED
+            }
+        };
+
+        const RL_CONFIG = {
+            gamma: 0.95,          // Discount factor (Short-term focus for reaction games)
+            epsilonStart: 1.0,    // 100% Random initially
+            epsilonMin: 0.01,     // Minimum 1% Random (Exploration floor)
+            epsilonDecay: 0.99,   // Multiplier per episode (Stable annealing)
+            learningRate: 0.0005, // Lower LR for Stability (Adam)
+            batchSize: 64,
+            memorySize: 20000,
+            targetUpdateFreq: 200, // Update target network every N steps
+            trainStart: 128,       // Start training after memory fills a bit
+            trainFreq: 4           // Train every N frames
+        };
+
+        /**
+         * ------------------------------------------------------------------
+         * GLOBAL STATE & SETUP
+         * ------------------------------------------------------------------
+         */
         const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { alpha: false });
         
-        // UI Elements
-        const scoreEl = document.getElementById('score');
-        const highScoreEl = document.getElementById('highScore');
-        const startScreen = document.getElementById('start-screen');
-        const gameOverScreen = document.getElementById('game-over-screen');
-        const finalScoreEl = document.getElementById('final-score');
-        const modeToggle = document.getElementById('mode-toggle');
-        const toggleKnob = document.getElementById('toggle-knob');
-        const aiInfo = document.getElementById('ai-info');
-        const aiEpisodesEl = document.getElementById('ai-episodes');
-        const aiQSizeEl = document.getElementById('ai-qsize');
-        const aiEpsilonEl = document.getElementById('ai-epsilon');
-        const controlHint = document.getElementById('control-hint');
-        const aiAutoRestartHint = document.getElementById('ai-auto-restart-hint');
-
-        // Game Configuration
-        const config = {
-            gravity: 0.8,
-            jumpForce: -16,
-            groundHeight: 100,
-            initialSpeed: 6,
-            maxSpeed: 16,
-            speedIncrement: 0.0008,
-            spawnRate: 0.018,
-            particleCount: 20
+        const State = {
+            manualMode: false,
+            isTraining: true,
+            lanes: [],
+            width: window.innerWidth,
+            height: window.innerHeight - 70, 
+            frame: 0
         };
 
-        // --- Reinforcement Learning Agent (Q-Learning) ---
-        class QAgent {
-            constructor() {
-                this.qTable = {}; // State -> [Reward for Wait, Reward for Jump]
-                this.learningRate = 0.2;
-                this.discountFactor = 0.95;
-                this.epsilon = 0.1; // Exploration rate (lower for precision)
-                this.episodes = 0;
-                this.lastState = null;
-                this.lastAction = null;
-            }
+        function resize() {
+            State.width = window.innerWidth;
+            State.height = window.innerHeight - 70;
+            canvas.width = State.width;
+            canvas.height = State.height;
+        }
+        window.addEventListener('resize', resize);
+        resize();
 
-            // Get discretized state
-            getState(player, obstacles, speed) {
-                const nextObs = obstacles.find(o => o.x + o.width > player.x) || { x: canvas.width + 1000, width: 0, height: 0 };
+        // GPU Initialization
+        async function initGPU() {
+            const statusEl = document.getElementById('gpu-status');
+            const loader = document.getElementById('loader');
+            try {
+                await tf.ready();
+                await tf.setBackend('webgl');
+                const backend = tf.getBackend().toUpperCase();
                 
-                // Discretization: Reduce state space for faster learning
-                const dist = Math.floor((nextObs.x - player.x) / 50); // 50px increments
-                const obsWidth = Math.floor(nextObs.width / 20);
-                const obsHeight = Math.floor(nextObs.height / 20);
-                const ground = player.isGrounded ? 1 : 0;
-                const spd = Math.floor(speed);
-
-                return `${dist}_${obsWidth}_${obsHeight}_${ground}_${spd}`;
-            }
-
-            getAction(state) {
-                if (!this.qTable[state]) this.qTable[state] = [0, 0];
-
-                // Epsilon-greedy exploration
-                if (Math.random() < this.epsilon) {
-                    return Math.random() < 0.1 ? 1 : 0; // Bias towards waiting
-                }
-
-                // Choose best action
-                return this.qTable[state][0] >= this.qTable[state][1] ? 0 : 1;
-            }
-
-            update(state, action, reward, nextState) {
-                if (!this.qTable[state]) this.qTable[state] = [0, 0];
-                if (!this.qTable[nextState]) this.qTable[nextState] = [0, 0];
-
-                const oldQ = this.qTable[state][action];
-                const maxNextQ = Math.max(...this.qTable[nextState]);
+                statusEl.innerText = `GPU: ACTIVE (${backend})`;
+                statusEl.classList.add('status-active');
                 
-                // Q-Learning Formula
-                this.qTable[state][action] = oldQ + this.learningRate * (reward + this.discountFactor * maxNextQ - oldQ);
+                // Warmup
+                tf.tidy(() => {
+                    tf.tensor([1]).mul(tf.tensor([2])).dataSync();
+                });
+                console.log("GPU/TensorFlow Initialized");
+            } catch (e) {
+                console.error(e);
+                statusEl.innerText = "GPU: FAILED (CPU MODE)";
+                statusEl.classList.add('status-error');
             }
+            
+            loader.style.transition = 'opacity 0.5s';
+            loader.style.opacity = '0';
+            setTimeout(() => {
+                loader.style.display = 'none';
+                startGame();
+            }, 500);
         }
 
-        const agent = new QAgent();
-
-        let state = {
-            gameRunning: false,
-            autoMode: false,
-            score: 0,
-            highScore: localStorage.getItem('neonRunnerHighScore') || 0,
-            speed: config.initialSpeed,
-            distance: 0
-        };
-
-        highScoreEl.innerText = String(state.highScore).padStart(5, '0');
-
-        class Player {
-            constructor() {
-                this.width = 50;
-                this.height = 60;
-                this.x = 100;
-                this.y = canvas.height - config.groundHeight - this.height;
-                this.vy = 0;
-                this.isGrounded = true;
-                this.rotation = 0;
-                this.color = '#22d3ee';
-            }
-
-            jump() {
-                if (this.isGrounded) {
-                    this.vy = config.jumpForce;
-                    this.isGrounded = false;
-                    playJumpSound();
-                }
-            }
-
-            update() {
-                this.vy += config.gravity;
-                this.y += this.vy;
-
-                const groundY = canvas.height - config.groundHeight - this.height;
-                if (this.y > groundY) {
-                    this.y = groundY;
-                    this.vy = 0;
-                    this.isGrounded = true;
-                }
-
-                if (!this.isGrounded) {
-                    this.rotation += 0.1;
-                } else {
-                    this.rotation = 0;
-                }
-            }
-
-            draw() {
-                ctx.save();
-                ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
-                ctx.rotate(this.rotation);
-                
-                ctx.shadowBlur = state.autoMode ? 25 : 15;
-                ctx.shadowColor = state.autoMode ? '#a855f7' : this.color;
-                
-                ctx.fillStyle = state.autoMode ? '#a855f7' : this.color;
-                ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
-                
-                ctx.fillStyle = '#fff';
-                ctx.fillRect(5, -15, 15, 10);
-                
-                ctx.restore();
-            }
-        }
-
-        class Obstacle {
-            constructor() {
-                this.width = 30 + Math.random() * 40;
-                this.height = 40 + Math.random() * 60;
-                this.x = canvas.width;
-                this.y = canvas.height - config.groundHeight - this.height;
-                this.color = '#f472b6';
-            }
-            update(speed) { this.x -= speed; }
-            draw() {
-                ctx.save();
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = this.color;
-                ctx.fillStyle = this.color;
-                ctx.fillRect(this.x, this.y, this.width, this.height);
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(this.x + 5, this.y + 5, this.width - 10, this.height - 10);
-                ctx.restore();
-            }
-        }
-
+        /**
+         * ------------------------------------------------------------------
+         * VISUAL EFFECTS
+         * ------------------------------------------------------------------
+         */
         class Particle {
             constructor(x, y, color) {
                 this.x = x; this.y = y;
-                this.size = Math.random() * 4 + 2;
-                this.vx = (Math.random() - 0.5) * 10;
-                this.vy = (Math.random() - 0.5) * 10;
+                this.size = Math.random() * 3 + 1;
+                this.vx = (Math.random() - 0.5) * 12;
+                this.vy = (Math.random() - 0.5) * 12;
                 this.life = 1.0;
+                this.decay = 0.02 + Math.random() * 0.02;
                 this.color = color;
             }
-            update() { this.x += this.vx; this.y += this.vy; this.life -= 0.02; }
-            draw() {
+            update() { this.x += this.vx; this.y += this.vy; this.life -= this.decay; }
+            draw(ctx) {
+                if (this.life <= 0) return;
                 ctx.globalAlpha = this.life;
                 ctx.fillStyle = this.color;
                 ctx.beginPath();
@@ -282,242 +335,654 @@
             }
         }
 
-        let player;
-        let obstacles = [];
-        let particles = [];
-        let stars = [];
-
-        function initBackground() {
-            stars = [];
-            for (let i = 0; i < 100; i++) {
-                stars.push({
-                    x: Math.random() * canvas.width,
-                    y: Math.random() * canvas.height,
-                    size: Math.random() * 2,
-                    speed: Math.random() * 0.5 + 0.1
-                });
-            }
-        }
-
-        function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            if (player) player.y = canvas.height - config.groundHeight - player.height;
-            initBackground();
-        }
-
-        window.addEventListener('resize', resize);
-        resize();
-
-        function spawnObstacle() {
-            if (Math.random() < config.spawnRate) {
-                if (obstacles.length === 0 || canvas.width - obstacles[obstacles.length - 1].x > 350) {
-                    obstacles.push(new Obstacle());
-                }
-            }
-        }
-
-        function drawBackground() {
-            const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-            grad.addColorStop(0, '#0f172a');
-            grad.addColorStop(1, '#1e293b');
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            ctx.fillStyle = '#fff';
-            stars.forEach(star => {
-                ctx.beginPath();
-                ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
-                ctx.fill();
-                star.x -= star.speed;
-                if (star.x < 0) star.x = canvas.width;
-            });
-
-            ctx.strokeStyle = state.autoMode ? 'rgba(168, 85, 247, 0.2)' : 'rgba(6, 182, 212, 0.2)';
-            const floorY = canvas.height - config.groundHeight;
-            const gridOffset = (state.distance * state.speed) % 40;
-            for (let i = -gridOffset; i < canvas.width; i += 40) {
-                ctx.beginPath();
-                ctx.moveTo(i, floorY);
-                ctx.lineTo(i, canvas.height);
-                ctx.stroke();
-            }
-
-            ctx.strokeStyle = state.autoMode ? '#a855f7' : '#06b6d4';
-            ctx.lineWidth = 4;
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = ctx.strokeStyle;
-            ctx.beginPath(); ctx.moveTo(0, floorY); ctx.lineTo(canvas.width, floorY); ctx.stroke();
+        function drawGlowingRect(ctx, x, y, w, h, color, blur = 15) {
+            ctx.shadowBlur = blur;
+            ctx.shadowColor = color;
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, w, h);
             ctx.shadowBlur = 0;
-        }
-
-        function checkCollision(p, o) {
-            return (p.x < o.x + o.width && p.x + p.width > o.x && p.y < o.y + o.height && p.y + p.height > o.y);
-        }
-
-        function createExplosion(x, y, color) {
-            for (let i = 0; i < config.particleCount; i++) particles.push(new Particle(x, y, color));
-        }
-
-        function gameOver() {
-            state.gameRunning = false;
             
-            // RL Update on Death
-            if (state.autoMode && agent.lastState !== null) {
-                agent.update(agent.lastState, agent.lastAction, -100, agent.lastState);
-                agent.episodes++;
-                updateAIPanel();
-            }
-
-            if (state.score > state.highScore) {
-                state.highScore = state.score;
-                localStorage.setItem('neonRunnerHighScore', state.highScore);
-                highScoreEl.innerText = String(state.highScore).padStart(5, '0');
-            }
-            finalScoreEl.innerText = state.score;
-            gameOverScreen.classList.remove('hidden');
-            playHitSound();
-
-            if (state.autoMode) {
-                aiAutoRestartHint.classList.remove('hidden');
-                setTimeout(() => { if (!state.gameRunning) initGame(); }, 1000);
-            } else {
-                aiAutoRestartHint.classList.add('hidden');
-            }
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.fillRect(x, y, w, h/4);
         }
 
-        function updateAIPanel() {
-            aiEpisodesEl.innerText = agent.episodes;
-            aiQSizeEl.innerText = Object.keys(agent.qTable).length;
-            aiEpsilonEl.innerText = Math.floor(agent.epsilon * 100) + '%';
-        }
+        /**
+         * ------------------------------------------------------------------
+         * RL AGENTS
+         * ------------------------------------------------------------------
+         */
+        class QTableAgent {
+            constructor() {
+                this.table = {};
+                this.epsilon = RL_CONFIG.epsilonStart;
+                this.color = CONFIG.colors.qt;
+                this.qValues = [0, 0];
+                this.lastActionType = 'RND';
+            }
 
-        function update() {
-            if (!state.gameRunning) return;
-
-            // RL Agent Decision
-            if (state.autoMode) {
-                const currentState = agent.getState(player, obstacles, state.speed);
-                const action = agent.getAction(currentState);
+            // Discretize state space (The key to Q-Table convergence)
+            getKey(state) {
+                const tti = state[0]; // Time to Impact
+                const speed = state[3]; // Normalized Speed
                 
-                if (action === 1) player.jump();
+                // Binning Time To Impact (More granular near danger)
+                let t_bin = 3; 
+                if (tti < 0.25) t_bin = 0;      // Critical (Must Jump)
+                else if (tti < 0.5) t_bin = 1;  // Warning
+                else if (tti < 0.8) t_bin = 2;  // Approaching
 
-                if (agent.lastState !== null) {
-                    agent.update(agent.lastState, agent.lastAction, 1, currentState);
-                }
+                // Binning Speed (Fast vs Slow)
+                let s_bin = speed > 0.5 ? 1 : 0; 
+                
+                // Grounded state is crucial
+                const grounded = state[2];
 
-                agent.lastState = currentState;
-                agent.lastAction = action;
+                return `${t_bin}:${s_bin}:${grounded}`; 
             }
 
-            state.distance += 1;
-            state.score = Math.floor(state.distance / 10);
-            scoreEl.innerText = String(state.score).padStart(5, '0');
-            state.speed = Math.min(config.maxSpeed, config.initialSpeed + (state.distance * config.speedIncrement));
+            act(state) {
+                const key = this.getKey(state);
+                if (!this.table[key]) this.table[key] = [0, 0]; // Init [Run, Jump]
+                this.qValues = [...this.table[key]];
 
-            player.update();
-            spawnObstacle();
-
-            obstacles.forEach((obs, index) => {
-                obs.update(state.speed);
-                if (checkCollision(player, obs)) {
-                    createExplosion(player.x + player.width/2, player.y + player.height/2, state.autoMode ? '#a855f7' : player.color);
-                    gameOver();
+                // Epsilon-Greedy Strategy
+		// UI表示(this.epsilon)が0.75(75%)の時、実確率は 0.75^8 ≒ 0.10 (10%) となりAI支配的になります
+                // UI表示が0.65(65%)の時は、実確率は 0.65^8 ≒ 0.03 (3%) 程度まで下がります
+                if (State.isTraining && Math.random() < Math.pow(this.epsilon, 8)) {
+                    this.lastActionType = 'RND';
+                    return Math.floor(Math.random() * 2);
                 }
-                if (obs.x + obs.width < 0) obstacles.splice(index, 1);
-            });
-
-            particles.forEach((p, index) => {
-                p.update();
-                if (p.life <= 0) particles.splice(index, 1);
-            });
-
-            draw();
-            requestAnimationFrame(update);
-        }
-
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawBackground();
-            obstacles.forEach(obs => obs.draw());
-            player.draw();
-            particles.forEach(p => p.draw());
-        }
-
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        function playJumpSound() {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = 'square';
-            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.1);
-            gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.1);
-        }
-
-        function playHitSound() {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(100, audioCtx.currentTime);
-            osc.frequency.linearRampToValueAtTime(20, audioCtx.currentTime + 0.3);
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.3);
-        }
-
-        function initGame() {
-            player = new Player();
-            obstacles = [];
-            particles = [];
-            state.score = 0;
-            state.distance = 0;
-            state.speed = config.initialSpeed;
-            state.gameRunning = true;
-            
-            agent.lastState = null;
-            agent.lastAction = null;
-            
-            startScreen.classList.add('hidden');
-            gameOverScreen.classList.add('hidden');
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            update();
-        }
-
-        // Mode Toggling
-        modeToggle.addEventListener('click', () => {
-            state.autoMode = !state.autoMode;
-            if (state.autoMode) {
-                toggleKnob.style.left = '26px';
-                modeToggle.classList.replace('bg-slate-700', 'bg-purple-600');
-                aiInfo.classList.add('ai-active');
-                controlHint.innerText = "AI is controlling the runner...";
-            } else {
-                toggleKnob.style.left = '4px';
-                modeToggle.classList.replace('bg-purple-600', 'bg-slate-700');
-                aiInfo.classList.remove('ai-active');
-                controlHint.innerText = "Press [SPACE] or TAP to Jump";
+                
+                this.lastActionType = 'AI';
+                // Exploit: Choose max Q-value
+                return this.qValues[0] >= this.qValues[1] ? 0 : 1;
             }
-        });
 
-        window.addEventListener('keydown', (e) => {
-            if (e.code === 'Space' && !state.autoMode) {
+            learn(state, action, reward, nextState) {
+                if (!State.isTraining) return;
+                const key = this.getKey(state);
+                const nextKey = this.getKey(nextState);
+                
+                // Init if new
+                if (!this.table[key]) this.table[key] = [0, 0];
+                if (!this.table[nextKey]) this.table[nextKey] = [0, 0];
+
+                const currentQ = this.table[key][action];
+                const maxNextQ = Math.max(...this.table[nextKey]);
+                
+                // Bellman Update Equation
+                // Q(s,a) = Q(s,a) + alpha * [R + gamma * max(Q(s',a')) - Q(s,a)]
+                this.table[key][action] += 0.1 * (reward + RL_CONFIG.gamma * maxNextQ - currentQ);
+            }
+
+            decay() { 
+                // Decays epsilon regardless of score to ensure shift to Exploitation
+                if (!State.isTraining) return;
+                if (this.epsilon > RL_CONFIG.epsilonMin) {
+                    this.epsilon *= RL_CONFIG.epsilonDecay;
+                }
+            }
+
+            getCoverage() {
+                // Approximate state space size (4 TTI * 2 Speed * 2 Grounded = 16 states)
+                const totalStates = 16; 
+                const learnt = Object.keys(this.table).length;
+                return Math.min(100, Math.round((learnt / totalStates) * 100));
+            }
+        }
+
+        class DQNAgent {
+            constructor() {
+                this.model = this.createModel();
+                this.targetModel = this.createModel();
+                this.updateTarget();
+                this.memory = [];
+                this.epsilon = RL_CONFIG.epsilonStart;
+                this.loss = null; 
+                this.trainSteps = 0;
+                this.color = CONFIG.colors.dqn;
+                this.qValues = [0, 0];
+                this.lastActionType = 'RND';
+                this.isProcessingBatch = false;
+            }
+
+            createModel() {
+                const model = tf.sequential();
+                // Hidden Layer 1
+                model.add(tf.layers.dense({ inputShape: [4], units: 24, activation: 'relu', kernelInitializer: 'heNormal' }));
+                // Hidden Layer 2
+                model.add(tf.layers.dense({ units: 24, activation: 'relu', kernelInitializer: 'heNormal' }));
+                // Output Layer (2 Actions)
+                model.add(tf.layers.dense({ units: 2, activation: 'linear' }));
+                
+                // Optimizer: Adam with lower learning rate for stability
+                model.compile({ optimizer: tf.train.adam(RL_CONFIG.learningRate), loss: 'meanSquaredError' });
+                return model;
+            }
+
+            updateTarget() {
+                tf.tidy(() => this.targetModel.setWeights(this.model.getWeights()));
+            }
+
+            act(state) {
+                // Predict Q-Values (AI)
+                const q = tf.tidy(() => this.model.predict(tf.tensor2d([state])).dataSync());
+                this.qValues = Array.from(q);
+
+                // Epsilon-Greedy
+		// 表示上のEpsilonが高くても、実際のランダム行動率を急激に下げて安定化させます
+                if (State.isTraining && Math.random() < Math.pow(this.epsilon, 8)) {
+                    this.lastActionType = 'RND';
+                    return Math.floor(Math.random() * 2);
+                }
+                
+                this.lastActionType = 'AI';
+                return this.qValues[0] >= this.qValues[1] ? 0 : 1;
+            }
+
+            remember(s, a, r, ns, d) {
+                if (this.memory.length >= RL_CONFIG.memorySize) this.memory.shift();
+                // Store experience
+                this.memory.push({ s, a, r, ns, d });
+            }
+
+            async train() {
+                if (!State.isTraining || this.memory.length < RL_CONFIG.trainStart || this.isProcessingBatch) return;
+                
+                this.isProcessingBatch = true;
+                
+                try {
+                    // 1. Sample Batch (Random sampling for I.I.D)
+                    const batchSize = RL_CONFIG.batchSize;
+                    const batch = [];
+                    for(let i=0; i<batchSize; i++) {
+                        batch.push(this.memory[Math.floor(Math.random() * this.memory.length)]);
+                    }
+
+                    // 2. Prepare Tensors (Using tidy for automatic memory cleanup)
+                    const { inputs, targets } = tf.tidy(() => {
+                        const states = tf.tensor2d(batch.map(m => m.s));
+                        const nextStates = tf.tensor2d(batch.map(m => m.ns));
+                        
+                        const qCurrent = this.model.predict(states);
+                        const qNext = this.targetModel.predict(nextStates);
+                        
+                        const qCurVal = qCurrent.dataSync(); 
+                        const qNextVal = qNext.dataSync();
+
+                        const xData = [];
+                        const yData = [];
+
+                        batch.forEach((mem, i) => {
+                            const idx = i * 2;
+                            const targetVec = [qCurVal[idx], qCurVal[idx+1]];
+                            
+                            // Bellman Equation: R + gamma * max(Q(s'))
+                            const maxNextQ = Math.max(qNextVal[idx], qNextVal[idx+1]);
+                            const target = mem.r + (mem.d ? 0 : RL_CONFIG.gamma * maxNextQ);
+                            
+                            // Soft update (Clipping theoretical gradients by bounding target)
+                            targetVec[mem.a] = target;
+                            
+                            xData.push(mem.s);
+                            yData.push(targetVec);
+                        });
+
+                        return { inputs: xData, targets: yData };
+                    });
+
+                    // 3. Train
+                    const history = await this.model.fit(tf.tensor2d(inputs, [batchSize, 4]), tf.tensor2d(targets, [batchSize, 2]), { 
+                        batchSize: batchSize, 
+                        epochs: 1, 
+                        verbose: 0,
+                        shuffle: true 
+                    });
+
+                    // 4. Record Loss
+                    if (history.history && history.history.loss) {
+                        this.loss = history.history.loss[0];
+                    }
+
+                    // 5. Update Target Network
+                    this.trainSteps++;
+                    if (this.trainSteps % RL_CONFIG.targetUpdateFreq === 0) {
+                        this.updateTarget();
+                    }
+
+                } catch(e) { 
+                    console.error("DQN Train Error:", e); 
+                    this.loss = -1;
+                } finally { 
+                    this.isProcessingBatch = false;
+                }
+            }
+
+            decay() { 
+                // Epsilon Annealing
+                if (!State.isTraining) return;
+                if (this.epsilon > RL_CONFIG.epsilonMin) {
+                    this.epsilon *= RL_CONFIG.epsilonDecay; 
+                }
+            }
+        }
+
+        /**
+         * ------------------------------------------------------------------
+         * GAME LOGIC (LANE)
+         * ------------------------------------------------------------------
+         */
+        class GameLane {
+            constructor(type, agent, index) {
+                this.type = type;
+                this.agent = agent;
+                this.index = index;
+                this.episode = 1;
+                this.bestScore = 0;
+                this.lastReward = 0;
+                this.particles = [];
+                
+                this.hudEl = document.createElement('div');
+                this.hudEl.className = `lane-hud hud-${type === 'Q-TABLE' ? 'qt' : (type === 'DQN' ? 'dqn' : 'man')}`;
+                document.getElementById('hud-container').appendChild(this.hudEl);
+                this.reset();
+            }
+
+            reset() {
+                this.player = { x: 80, y: 0, w: CONFIG.playerSize, h: CONFIG.playerSize, vy: 0, grounded: true };
+                this.obstacles = [];
+                this.score = 0;
+                this.speed = CONFIG.baseSpeed;
+                this.alive = true;
+                this.spawnObstacle(600);
+            }
+
+            spawnParticles(color) {
+                for(let i=0; i<20; i++) {
+                    this.particles.push(new Particle(this.player.x + this.player.w/2, this.player.y - this.player.h/2, color));
+                }
+            }
+
+            getState() {
+                let nextObs = this.obstacles.find(o => o.x + o.w > this.player.x);
+                let tti = 2.0; 
+                let width = 0.0;
+                
+                if (nextObs) {
+                    const dist = nextObs.x - (this.player.x + this.player.w);
+                    tti = dist < 0 ? 0 : dist / this.speed / 60.0; // Time To Impact in seconds approx
+                    width = Math.min(1, nextObs.w / 150);
+                }
+                const normSpeed = (this.speed - CONFIG.baseSpeed) / (CONFIG.maxSpeed - CONFIG.baseSpeed);
+                // Normalized State Vector [0-2, 0-1, 0/1, 0-1]
+                return [Math.min(2.0, tti), width, this.player.grounded ? 1 : 0, normSpeed];
+            }
+
+            spawnObstacle(minX) {
+                const jumpDuration = 2 * Math.abs(CONFIG.jumpForce) / CONFIG.gravity; 
+                const jumpDistance = this.speed * jumpDuration; 
+                const minGap = jumpDistance * 1.3; 
+                
+                let spawnX = minX;
+                if (this.obstacles.length > 0) {
+                    const last = this.obstacles[this.obstacles.length-1];
+                    const safeX = last.x + last.w + minGap;
+                    if (spawnX < safeX) spawnX = safeX;
+                }
+                const w = 25 + Math.random() * 30;
+                const h = 30 + Math.random() * 30;
+                this.obstacles.push({ x: spawnX, w, h, passed: false });
+            }
+
+            update() {
+                // Particles
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    this.particles[i].update();
+                    if (this.particles[i].life <= 0) this.particles.splice(i, 1);
+                }
+
+                if (!this.alive) {
+                    if (this.type !== 'MANUAL') {
+                        // DECAY EPSILON ON DEATH (Ensures convergence over episodes)
+                        this.agent.decay();
+                        this.episode++;
+                        this.reset();
+                    } else if (Input.jumpPressed) {
+                         this.reset();
+                         Input.jumpPressed = false;
+                    }
+                    return;
+                }
+
+                const state = this.getState();
+                const tti = state[0];
+                let action = 0;
+                let r = 0; // Reward
+
+                // Action
+                if (this.type === 'MANUAL') {
+                    if (Input.jumpPressed && this.player.grounded) {
+                        this.player.vy = CONFIG.jumpForce;
+                        this.player.grounded = false;
+                        Input.jumpPressed = false;
+                        action = 1;
+                    }
+                } else {
+                    action = this.agent.act(state);
+                }
+
+                // Physics & Reward Shaping
+                // 1. Alive Reward (Small positive)
+                if (this.player.grounded) r += 0.01; 
+                
+                // 2. Jump Logic
+                if (action === 1 && this.player.grounded) {
+                    this.player.vy = CONFIG.jumpForce;
+                    this.player.grounded = false;
+                    
+                    // Reward Shaping: Penalize bad jumps
+                    if (tti > 0.6) r -= 0.5;       // Too early
+                    else if (tti < 0.1) r -= 0.5;  // Panic jump
+                    else r -= 0.05;                // Small energy cost
+                }
+
+                this.player.vy += CONFIG.gravity;
+                this.player.y += this.player.vy;
+                if (this.player.y > 0) {
+                    this.player.y = 0; this.player.vy = 0; this.player.grounded = true;
+                }
+
+                // Obstacles
+                const last = this.obstacles[this.obstacles.length-1];
+                if (State.width - last.x > 200) this.spawnObstacle(State.width + Math.random() * 100);
+
+                let hit = false;
+                for (let i=this.obstacles.length-1; i>=0; i--) {
+                    let o = this.obstacles[i];
+                    o.x -= this.speed;
+                    // Collision
+                    if (this.player.x < o.x + o.w - 8 && this.player.x + this.player.w > o.x + 8 && this.player.y > -o.h + 8) hit = true;
+                    
+                    if (!o.passed && o.x + o.w < this.player.x) {
+                        o.passed = true;
+                        this.score++;
+                        r += 0.5; // Reward for passing obstacle (Scaled down from 5.0 for stability)
+                    }
+                    if (o.x + o.w < 0) this.obstacles.splice(i, 1);
+                }
+
+                if (hit) {
+                    r -= 1.0; // Penalty for crash (Scaled down from -10.0 for stability)
+                    this.alive = false;
+                    if(this.score > this.bestScore) this.bestScore = this.score;
+                    this.spawnParticles(this.agent ? this.agent.color : CONFIG.colors.man);
+                }
+
+                this.lastReward = r;
+
+                // Training Step
+                if (this.type !== 'MANUAL' && State.isTraining) {
+                    const nextState = this.getState();
+                    if (this.type === 'DQN') {
+                        // Store Experience
+                        this.agent.remember(state, action, r, nextState, !this.alive);
+                        // Optimize Model
+                        if (State.frame % RL_CONFIG.trainFreq === 0) {
+                            this.agent.train(); 
+                        }
+                    } else {
+                        // Q-Table Update
+                        this.agent.learn(state, action, r, nextState);
+                    }
+                }
+                this.speed = Math.min(CONFIG.maxSpeed, this.speed + CONFIG.speedInc);
+            }
+
+            draw(ctx, y, h) {
+                const gy = y + h - CONFIG.groundHeight;
+
+                // 1. Clipping & Background
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(0, y, State.width, h);
+                ctx.clip();
+                
+                ctx.fillStyle = (this.index % 2 === 0) ? '#0f172a' : '#111827';
+                ctx.fillRect(0, y, State.width, h);
+
+                // Grid
+                ctx.strokeStyle = 'rgba(6, 182, 212, 0.05)';
+                ctx.lineWidth = 1;
+                const gridOffset = -(State.frame * CONFIG.baseSpeed) % 40;
+                for(let gx = gridOffset; gx < State.width; gx += 40) {
+                    ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx, y); ctx.stroke();
+                }
+
+                // Ground
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = (this.agent ? this.agent.color : CONFIG.colors.man);
+                ctx.strokeStyle = ctx.shadowColor;
+                ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(State.width, gy); ctx.stroke();
+                ctx.shadowBlur = 0;
+
+                // 2. Visual Debug (Prediction Lines)
+                if (this.type !== 'MANUAL' && this.alive) {
+                    const nextObs = this.obstacles.find(o => o.x + o.w > this.player.x);
+                    if (nextObs) {
+                        const dist = nextObs.x - (this.player.x + this.player.w);
+                        const tti = dist / this.speed / 60.0;
+                        
+                        let lineColor = CONFIG.colors.safe;
+                        if (tti < 0.25) lineColor = CONFIG.colors.danger; // Danger
+                        else if (tti < 0.5) lineColor = CONFIG.colors.warn; // Warning
+
+                        ctx.save();
+                        ctx.strokeStyle = lineColor;
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([4, 4]);
+                        ctx.shadowBlur = 5;
+                        ctx.shadowColor = lineColor;
+                        
+                        ctx.beginPath();
+                        const py = gy + this.player.y - this.player.h/2;
+                        const ox = nextObs.x;
+                        const oy = gy - nextObs.h/2;
+                        
+                        ctx.moveTo(this.player.x + this.player.w, py);
+                        ctx.lineTo(ox, oy);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                }
+
+                // 3. Obstacles
+                this.obstacles.forEach(o => {
+                    drawGlowingRect(ctx, o.x, gy - o.h, o.w, o.h, CONFIG.colors.obs, 10);
+                });
+
+                // 4. Player
+                if (this.alive) {
+                    const py = gy + this.player.y - this.player.h;
+                    const pc = this.type === 'MANUAL' ? CONFIG.colors.man : this.agent.color;
+                    drawGlowingRect(ctx, this.player.x, py, this.player.w, this.player.h, pc, 15);
+                }
+
+                // 5. Particles
+                this.particles.forEach(p => {
+                    const drawY = gy + p.y; 
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = p.life;
+                    ctx.beginPath(); ctx.arc(p.x, drawY, p.size, 0, Math.PI*2); ctx.fill();
+                    ctx.globalAlpha = 1.0;
+                });
+
+                ctx.restore();
+                this.updateHUD();
+            }
+
+            updateHUD() {
+                const hudTop = 90 + this.index * (State.height / State.lanes.length);
+                this.hudEl.style.top = `${hudTop}px`;
+
+                let html = `
+                    <div class="hud-header">
+                        <span class="hud-name">${this.type}</span> 
+                        <span class="hud-score">${Math.floor(this.score)}</span>
+                    </div>
+                    <div class="hud-grid">
+                        <span class="hud-label">EPISODE</span> <span class="hud-val">${this.episode}</span>
+                        <span class="hud-label">BEST</span> <span class="hud-val val-hl">${this.bestScore}</span>
+                `;
+
+                if (this.type !== 'MANUAL') {
+                    const q = this.agent.qValues;
+                    const sum = Math.abs(q[0]) + Math.abs(q[1]) || 0.001;
+                    const pRun = (Math.abs(q[0])/sum)*100;
+                    const pJmp = (Math.abs(q[1])/sum)*100;
+                    
+                    const eps = State.isTraining ? this.agent.epsilon.toFixed(2) : "0.00";
+                    const rClass = this.lastReward > 0 ? 'val-reward-pos' : (this.lastReward < 0 ? 'val-reward-neg' : '');
+
+                    // Action Type Display
+                    const at = this.agent.lastActionType;
+                    const atClass = at === 'AI' ? 'val-act-ai' : (at === 'RND' ? 'val-act-rnd' : 'val-act-test');
+                    
+                    html += `
+                        <span class="hud-label">ACT</span> <span class="hud-val ${atClass}">${at}</span>
+                        <span class="hud-label">EPSILON</span> <span class="hud-val">${eps}</span>
+                        <span class="hud-label">REWARD</span> <span class="hud-val ${rClass}">${this.lastReward.toFixed(2)}</span>
+                    `;
+
+                    if (this.type === 'DQN') {
+                        let lossDisplay = `<span class="hud-val val-wait">WAIT</span>`;
+                        if (this.agent.memory.length >= RL_CONFIG.trainStart && this.agent.loss !== null) {
+                            if (this.agent.loss === -1) {
+                                lossDisplay = `<span class="hud-val val-loss">ERR</span>`;
+                            } else {
+                                // Scientific notation for small loss values
+                                const val = (this.agent.loss < 0.001 && this.agent.loss > 0) 
+                                    ? this.agent.loss.toExponential(1) 
+                                    : this.agent.loss.toFixed(4);
+                                lossDisplay = `<span class="hud-val val-loss">${val}</span>`;
+                            }
+                        }
+                        
+                        html += `
+                            <span class="hud-label">STEPS</span> <span class="hud-val">${this.agent.trainSteps}</span>
+                            <span class="hud-label">LOSS</span> ${lossDisplay}
+                        `;
+                    } else {
+                        html += `<span class="hud-label">Q-COV</span> <span class="hud-val">${this.agent.getCoverage()}%</span>`;
+                        html += `<span></span><span></span>`; 
+                    }
+
+                    // Epsilon Bar
+                    const epsPct = (this.agent.epsilon) * 100;
+                    html += `
+                        <div class="intent-wrapper">
+                            <div style="font-size:9px; color:#64748b; display:flex; justify-content:space-between; margin-bottom:2px;">
+                                <span>EXPLORATION RATE</span>
+                                <span>${(epsPct).toFixed(0)}%</span>
+                            </div>
+                            <div class="epsilon-bar-bg"><div class="epsilon-bar-fill" style="width:${epsPct}%"></div></div>
+                        
+                            <div class="intent-text" style="margin-top:6px;">
+                                <span>RUN ${(q[0]).toFixed(2)}</span>
+                                <span>JMP ${(q[1]).toFixed(2)}</span>
+                            </div>
+                            <div class="intent-flex">
+                                <div class="bar-run" style="width:${pRun}%"></div>
+                                <div class="bar-jmp" style="width:${pJmp}%"></div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                     if(!this.alive) {
+                         html += `<div style="grid-column:1/-1; text-align:center; color:#f43f5e; font-weight:bold; margin-top:10px; animation:pulse 1s infinite;">PRESS SPACE TO RESTART</div>`;
+                     }
+                }
+
+                html += `</div>`; 
+                this.hudEl.innerHTML = html;
+            }
+        }
+
+        /**
+         * ------------------------------------------------------------------
+         * MAIN LOOP & EVENTS
+         * ------------------------------------------------------------------
+         */
+        const Input = { jumpPressed: false };
+        let agents = { qt: null, dqn: null };
+
+        function startGame() {
+            agents.qt = new QTableAgent();
+            agents.dqn = new DQNAgent();
+            setupLanes();
+            
+            window.addEventListener('keydown', e => {
+                if (e.code === 'Space') {
+                    e.preventDefault();
+                    if (State.manualMode) Input.jumpPressed = true;
+                }
+            });
+            window.addEventListener('touchstart', e => {
                 e.preventDefault();
-                if (state.gameRunning) player.jump();
+                if (State.manualMode) Input.jumpPressed = true;
+            }, {passive: false});
+
+            document.getElementById('train-toggle').addEventListener('change', e => {
+                State.isTraining = e.target.checked;
+                const lbl = document.getElementById('mode-label');
+                lbl.innerText = State.isTraining ? "TRAINING" : "TESTING";
+                lbl.style.color = State.isTraining ? "#94a3b8" : "#22c55e";
+            });
+
+            document.getElementById('manual-toggle').addEventListener('change', e => {
+                State.manualMode = e.target.checked;
+                setupLanes();
+            });
+
+            loop();
+        }
+
+        function setupLanes() {
+            document.getElementById('hud-container').innerHTML = '';
+            State.lanes = [];
+            State.lanes.push(new GameLane('Q-TABLE', agents.qt, 0));
+            State.lanes.push(new GameLane('DQN', agents.dqn, 1));
+            if (State.manualMode) {
+                State.lanes.push(new GameLane('MANUAL', null, 2));
             }
-        });
-        window.addEventListener('touchstart', () => {
-            if (state.gameRunning && !state.autoMode) player.jump();
-        });
+        }
 
-        document.getElementById('start-btn').addEventListener('click', initGame);
-        document.getElementById('restart-btn').addEventListener('click', initGame);
+        function loop() {
+            State.frame++;
+            ctx.fillStyle = CONFIG.colors.bg;
+            ctx.fillRect(0, 0, State.width, State.height);
 
-        updateAIPanel();
-        drawBackground();
+            const lh = State.height / State.lanes.length;
+            
+            State.lanes.forEach((l, i) => {
+                l.update();
+                l.draw(ctx, i * lh, lh);
+                
+                if (i < State.lanes.length - 1) {
+                    ctx.strokeStyle = '#334155'; 
+                    ctx.lineWidth = 1; 
+                    ctx.beginPath(); 
+                    ctx.moveTo(0, (i+1)*lh); 
+                    ctx.lineTo(State.width, (i+1)*lh); 
+                    ctx.stroke();
+                }
+            });
+
+            requestAnimationFrame(loop);
+        }
+
+        initGPU();
+
     </script>
 </body>
 </html>
