@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Marathon Runner - AI Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0f172a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: manipulation;
+        }
+        #gameCanvas {
+            display: block;
+            image-rendering: pixelated;
+        }
+        .retro-text {
+            text-shadow: 0 0 10px rgba(34, 211, 238, 0.8);
+        }
+        /* AI Panel Glow */
+        .ai-active {
+            box-shadow: 0 0 20px rgba(168, 85, 247, 0.6);
+            border-color: rgba(168, 85, 247, 0.8) !important;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen">
+
+    <!-- UI Layer -->
+    <div id="ui-container" class="absolute inset-0 pointer-events-none flex flex-col justify-between p-6">
+        <div class="flex justify-between items-start pointer-events-auto">
+            <div class="space-y-2">
+                <div class="bg-black/40 backdrop-blur-md p-4 rounded-xl border border-cyan-500/30">
+                    <p class="text-cyan-400 text-xs uppercase tracking-widest font-bold">Distance</p>
+                    <p id="score" class="text-3xl text-white font-mono retro-text">00000</p>
+                </div>
+                <!-- AI Info Panel -->
+                <div id="ai-info" class="bg-black/40 backdrop-blur-md p-3 rounded-xl border border-purple-500/30 transition-all duration-500">
+                    <p class="text-purple-400 text-[10px] uppercase tracking-widest font-bold">AI Status</p>
+                    <div class="flex flex-col text-xs text-slate-300 font-mono">
+                        <span>Episode: <span id="ai-episodes">0</span></span>
+                        <span>Knowledge: <span id="ai-qsize">0</span></span>
+                        <span>Exploration: <span id="ai-epsilon">0%</span></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col items-end gap-2">
+                <div class="bg-black/40 backdrop-blur-md p-4 rounded-xl border border-pink-500/30">
+                    <p class="text-pink-400 text-xs uppercase tracking-widest font-bold">Best</p>
+                    <p id="highScore" class="text-3xl text-white font-mono">00000</p>
+                </div>
+                <!-- Mode Toggle -->
+                <div class="bg-black/60 backdrop-blur-md p-2 rounded-lg border border-slate-600 pointer-events-auto">
+                    <div class="flex items-center gap-3">
+                        <span class="text-[10px] text-slate-400 font-bold">MANUAL</span>
+                        <button id="mode-toggle" class="relative w-12 h-6 bg-slate-700 rounded-full transition-colors">
+                            <div id="toggle-knob" class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-all"></div>
+                        </button>
+                        <span class="text-[10px] text-purple-400 font-bold">AUTO (RL)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="start-screen" class="pointer-events-auto self-center bg-black/60 backdrop-blur-xl p-8 rounded-2xl border-2 border-cyan-500 text-center max-w-sm w-full shadow-[0_0_50px_rgba(6,182,212,0.3)]">
+            <h1 class="text-4xl font-black text-white mb-2 tracking-tighter italic">NEON RUN</h1>
+            <p class="text-cyan-300 text-sm mb-6 uppercase tracking-wider">Infinite Marathon Challenge</p>
+            <div class="space-y-4">
+                <button id="start-btn" class="w-full py-4 bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xl rounded-lg transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-cyan-500/50">
+                    START RUN
+                </button>
+                <p id="control-hint" class="text-slate-400 text-xs mt-4">Press [SPACE] or TAP to Jump</p>
+            </div>
+        </div>
+
+        <div id="game-over-screen" class="hidden pointer-events-auto self-center bg-black/80 backdrop-blur-xl p-8 rounded-2xl border-2 border-pink-500 text-center max-w-sm w-full">
+            <h2 class="text-3xl font-bold text-pink-500 mb-2">RUN ENDED</h2>
+            <p id="final-score" class="text-5xl text-white font-mono mb-6">0</p>
+            <button id="restart-btn" class="w-full py-4 bg-pink-500 hover:bg-pink-400 text-white font-bold text-xl rounded-lg transition-all transform hover:scale-105">
+                RETRY
+            </button>
+            <p id="ai-auto-restart-hint" class="text-purple-400 text-[10px] mt-4 hidden">AI is learning... auto-restarting in 1s</p>
+        </div>
+    </div>
+
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // UI Elements
+        const scoreEl = document.getElementById('score');
+        const highScoreEl = document.getElementById('highScore');
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const finalScoreEl = document.getElementById('final-score');
+        const modeToggle = document.getElementById('mode-toggle');
+        const toggleKnob = document.getElementById('toggle-knob');
+        const aiInfo = document.getElementById('ai-info');
+        const aiEpisodesEl = document.getElementById('ai-episodes');
+        const aiQSizeEl = document.getElementById('ai-qsize');
+        const aiEpsilonEl = document.getElementById('ai-epsilon');
+        const controlHint = document.getElementById('control-hint');
+        const aiAutoRestartHint = document.getElementById('ai-auto-restart-hint');
+
+        // Game Configuration
+        const config = {
+            gravity: 0.8,
+            jumpForce: -16,
+            groundHeight: 100,
+            initialSpeed: 6,
+            maxSpeed: 16,
+            speedIncrement: 0.0008,
+            spawnRate: 0.018,
+            particleCount: 20
+        };
+
+        // --- Reinforcement Learning Agent (Q-Learning) ---
+        class QAgent {
+            constructor() {
+                this.qTable = {}; // State -> [Reward for Wait, Reward for Jump]
+                this.learningRate = 0.2;
+                this.discountFactor = 0.95;
+                this.epsilon = 0.1; // Exploration rate (lower for precision)
+                this.episodes = 0;
+                this.lastState = null;
+                this.lastAction = null;
+            }
+
+            // Get discretized state
+            getState(player, obstacles, speed) {
+                const nextObs = obstacles.find(o => o.x + o.width > player.x) || { x: canvas.width + 1000, width: 0, height: 0 };
+                
+                // Discretization: Reduce state space for faster learning
+                const dist = Math.floor((nextObs.x - player.x) / 50); // 50px increments
+                const obsWidth = Math.floor(nextObs.width / 20);
+                const obsHeight = Math.floor(nextObs.height / 20);
+                const ground = player.isGrounded ? 1 : 0;
+                const spd = Math.floor(speed);
+
+                return `${dist}_${obsWidth}_${obsHeight}_${ground}_${spd}`;
+            }
+
+            getAction(state) {
+                if (!this.qTable[state]) this.qTable[state] = [0, 0];
+
+                // Epsilon-greedy exploration
+                if (Math.random() < this.epsilon) {
+                    return Math.random() < 0.1 ? 1 : 0; // Bias towards waiting
+                }
+
+                // Choose best action
+                return this.qTable[state][0] >= this.qTable[state][1] ? 0 : 1;
+            }
+
+            update(state, action, reward, nextState) {
+                if (!this.qTable[state]) this.qTable[state] = [0, 0];
+                if (!this.qTable[nextState]) this.qTable[nextState] = [0, 0];
+
+                const oldQ = this.qTable[state][action];
+                const maxNextQ = Math.max(...this.qTable[nextState]);
+                
+                // Q-Learning Formula
+                this.qTable[state][action] = oldQ + this.learningRate * (reward + this.discountFactor * maxNextQ - oldQ);
+            }
+        }
+
+        const agent = new QAgent();
+
+        let state = {
+            gameRunning: false,
+            autoMode: false,
+            score: 0,
+            highScore: localStorage.getItem('neonRunnerHighScore') || 0,
+            speed: config.initialSpeed,
+            distance: 0
+        };
+
+        highScoreEl.innerText = String(state.highScore).padStart(5, '0');
+
+        class Player {
+            constructor() {
+                this.width = 50;
+                this.height = 60;
+                this.x = 100;
+                this.y = canvas.height - config.groundHeight - this.height;
+                this.vy = 0;
+                this.isGrounded = true;
+                this.rotation = 0;
+                this.color = '#22d3ee';
+            }
+
+            jump() {
+                if (this.isGrounded) {
+                    this.vy = config.jumpForce;
+                    this.isGrounded = false;
+                    playJumpSound();
+                }
+            }
+
+            update() {
+                this.vy += config.gravity;
+                this.y += this.vy;
+
+                const groundY = canvas.height - config.groundHeight - this.height;
+                if (this.y > groundY) {
+                    this.y = groundY;
+                    this.vy = 0;
+                    this.isGrounded = true;
+                }
+
+                if (!this.isGrounded) {
+                    this.rotation += 0.1;
+                } else {
+                    this.rotation = 0;
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+                ctx.rotate(this.rotation);
+                
+                ctx.shadowBlur = state.autoMode ? 25 : 15;
+                ctx.shadowColor = state.autoMode ? '#a855f7' : this.color;
+                
+                ctx.fillStyle = state.autoMode ? '#a855f7' : this.color;
+                ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+                
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(5, -15, 15, 10);
+                
+                ctx.restore();
+            }
+        }
+
+        class Obstacle {
+            constructor() {
+                this.width = 30 + Math.random() * 40;
+                this.height = 40 + Math.random() * 60;
+                this.x = canvas.width;
+                this.y = canvas.height - config.groundHeight - this.height;
+                this.color = '#f472b6';
+            }
+            update(speed) { this.x -= speed; }
+            draw() {
+                ctx.save();
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = this.color;
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(this.x + 5, this.y + 5, this.width - 10, this.height - 10);
+                ctx.restore();
+            }
+        }
+
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x; this.y = y;
+                this.size = Math.random() * 4 + 2;
+                this.vx = (Math.random() - 0.5) * 10;
+                this.vy = (Math.random() - 0.5) * 10;
+                this.life = 1.0;
+                this.color = color;
+            }
+            update() { this.x += this.vx; this.y += this.vy; this.life -= 0.02; }
+            draw() {
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        let player;
+        let obstacles = [];
+        let particles = [];
+        let stars = [];
+
+        function initBackground() {
+            stars = [];
+            for (let i = 0; i < 100; i++) {
+                stars.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    size: Math.random() * 2,
+                    speed: Math.random() * 0.5 + 0.1
+                });
+            }
+        }
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            if (player) player.y = canvas.height - config.groundHeight - player.height;
+            initBackground();
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+
+        function spawnObstacle() {
+            if (Math.random() < config.spawnRate) {
+                if (obstacles.length === 0 || canvas.width - obstacles[obstacles.length - 1].x > 350) {
+                    obstacles.push(new Obstacle());
+                }
+            }
+        }
+
+        function drawBackground() {
+            const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            grad.addColorStop(0, '#0f172a');
+            grad.addColorStop(1, '#1e293b');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = '#fff';
+            stars.forEach(star => {
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+                ctx.fill();
+                star.x -= star.speed;
+                if (star.x < 0) star.x = canvas.width;
+            });
+
+            ctx.strokeStyle = state.autoMode ? 'rgba(168, 85, 247, 0.2)' : 'rgba(6, 182, 212, 0.2)';
+            const floorY = canvas.height - config.groundHeight;
+            const gridOffset = (state.distance * state.speed) % 40;
+            for (let i = -gridOffset; i < canvas.width; i += 40) {
+                ctx.beginPath();
+                ctx.moveTo(i, floorY);
+                ctx.lineTo(i, canvas.height);
+                ctx.stroke();
+            }
+
+            ctx.strokeStyle = state.autoMode ? '#a855f7' : '#06b6d4';
+            ctx.lineWidth = 4;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = ctx.strokeStyle;
+            ctx.beginPath(); ctx.moveTo(0, floorY); ctx.lineTo(canvas.width, floorY); ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+
+        function checkCollision(p, o) {
+            return (p.x < o.x + o.width && p.x + p.width > o.x && p.y < o.y + o.height && p.y + p.height > o.y);
+        }
+
+        function createExplosion(x, y, color) {
+            for (let i = 0; i < config.particleCount; i++) particles.push(new Particle(x, y, color));
+        }
+
+        function gameOver() {
+            state.gameRunning = false;
+            
+            // RL Update on Death
+            if (state.autoMode && agent.lastState !== null) {
+                agent.update(agent.lastState, agent.lastAction, -100, agent.lastState);
+                agent.episodes++;
+                updateAIPanel();
+            }
+
+            if (state.score > state.highScore) {
+                state.highScore = state.score;
+                localStorage.setItem('neonRunnerHighScore', state.highScore);
+                highScoreEl.innerText = String(state.highScore).padStart(5, '0');
+            }
+            finalScoreEl.innerText = state.score;
+            gameOverScreen.classList.remove('hidden');
+            playHitSound();
+
+            if (state.autoMode) {
+                aiAutoRestartHint.classList.remove('hidden');
+                setTimeout(() => { if (!state.gameRunning) initGame(); }, 1000);
+            } else {
+                aiAutoRestartHint.classList.add('hidden');
+            }
+        }
+
+        function updateAIPanel() {
+            aiEpisodesEl.innerText = agent.episodes;
+            aiQSizeEl.innerText = Object.keys(agent.qTable).length;
+            aiEpsilonEl.innerText = Math.floor(agent.epsilon * 100) + '%';
+        }
+
+        function update() {
+            if (!state.gameRunning) return;
+
+            // RL Agent Decision
+            if (state.autoMode) {
+                const currentState = agent.getState(player, obstacles, state.speed);
+                const action = agent.getAction(currentState);
+                
+                if (action === 1) player.jump();
+
+                if (agent.lastState !== null) {
+                    agent.update(agent.lastState, agent.lastAction, 1, currentState);
+                }
+
+                agent.lastState = currentState;
+                agent.lastAction = action;
+            }
+
+            state.distance += 1;
+            state.score = Math.floor(state.distance / 10);
+            scoreEl.innerText = String(state.score).padStart(5, '0');
+            state.speed = Math.min(config.maxSpeed, config.initialSpeed + (state.distance * config.speedIncrement));
+
+            player.update();
+            spawnObstacle();
+
+            obstacles.forEach((obs, index) => {
+                obs.update(state.speed);
+                if (checkCollision(player, obs)) {
+                    createExplosion(player.x + player.width/2, player.y + player.height/2, state.autoMode ? '#a855f7' : player.color);
+                    gameOver();
+                }
+                if (obs.x + obs.width < 0) obstacles.splice(index, 1);
+            });
+
+            particles.forEach((p, index) => {
+                p.update();
+                if (p.life <= 0) particles.splice(index, 1);
+            });
+
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBackground();
+            obstacles.forEach(obs => obs.draw());
+            player.draw();
+            particles.forEach(p => p.draw());
+        }
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playJumpSound() {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+        }
+
+        function playHitSound() {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(20, audioCtx.currentTime + 0.3);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+        }
+
+        function initGame() {
+            player = new Player();
+            obstacles = [];
+            particles = [];
+            state.score = 0;
+            state.distance = 0;
+            state.speed = config.initialSpeed;
+            state.gameRunning = true;
+            
+            agent.lastState = null;
+            agent.lastAction = null;
+            
+            startScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            update();
+        }
+
+        // Mode Toggling
+        modeToggle.addEventListener('click', () => {
+            state.autoMode = !state.autoMode;
+            if (state.autoMode) {
+                toggleKnob.style.left = '26px';
+                modeToggle.classList.replace('bg-slate-700', 'bg-purple-600');
+                aiInfo.classList.add('ai-active');
+                controlHint.innerText = "AI is controlling the runner...";
+            } else {
+                toggleKnob.style.left = '4px';
+                modeToggle.classList.replace('bg-purple-600', 'bg-slate-700');
+                aiInfo.classList.remove('ai-active');
+                controlHint.innerText = "Press [SPACE] or TAP to Jump";
+            }
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && !state.autoMode) {
+                e.preventDefault();
+                if (state.gameRunning) player.jump();
+            }
+        });
+        window.addEventListener('touchstart', () => {
+            if (state.gameRunning && !state.autoMode) player.jump();
+        });
+
+        document.getElementById('start-btn').addEventListener('click', initGame);
+        document.getElementById('restart-btn').addEventListener('click', initGame);
+
+        updateAIPanel();
+        drawBackground();
+    </script>
+</body>
+</html>
